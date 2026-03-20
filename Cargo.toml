@@ -2,25 +2,29 @@
 name = "duck-keyboard"
 version = "0.1.0"
 edition = "2024"
+description = "Duck Keyboard Prank Application"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0.102"
-daemonize = "0.5.0"
-rand = "0.10.0"
+rand = "=0.8.5"
 rdev = "0.5.3"
-rodio = "0.22.2"
+rodio = "=0.19.0"
 rust-embed = "8.11.0"
 clap = { version = "4.5", features = ["derive"] }
-libc = "0.2"
 
 [package.metadata.deb]
-maintainer = "Tu Nombre <tu@email.com>"
-copyright = "2026, Tu Nombre"
-extended-description = "A simple prank application that makes duck sounds."
+maintainer = "andexer"
+copyright = "2026, andexer"
+extended-description = "Una aplicacion de broma que reproduce sonidos de pato al presionar cualquier tecla."
 assets = [
-    ["target/release/duck-keyboard", "usr/bin/", "755"],
-    ["duck-keyboard.service", "etc/systemd/system/", "644"]
+    ["target/release/duck-keyboard", "usr/bin/", "755"]
 ]
 
-[package.metadata.rpm]
-package = "duck-keyboard"
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/duck-keyboard", dest = "/usr/bin/duck-keyboard", mode = "755" }
+]
+pre_uninstall_script = "rpm_preun.sh"
+post_install_script = "rpm_postinst.sh"
+
