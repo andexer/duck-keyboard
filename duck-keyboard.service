@@ -1,0 +1,19 @@
+[Unit]
+Description=Duck Keyboard Prank Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/duck-keyboard --daemon
+Restart=on-failure
+RestartSec=5
+User=nobody
+# En sistemas gráficos, rdev/uiohook requiere acceso al X server o input subsystem.
+# User=nobody casi siempre fallará intentando acceder a /dev/input o X11.
+# Por lo que para keyloggers globales de broma que operan sobre evdev, a menudo requiere root.
+# Comenta la línea User si necesitas root:
+# User=root
+Group=input
+
+[Install]
+WantedBy=multi-user.target
