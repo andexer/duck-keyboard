@@ -143,6 +143,14 @@ fallback_source_install() {
     fi
 
     need_cmd cargo
+    # Si cargo falla, puede ser que rustup no tenga un toolchain por defecto (comun en Manjaro/Arch)
+    if ! cargo --version >/dev/null 2>&1; then
+        if command -v rustup >/dev/null 2>&1; then
+            echo "Detectado rustup sin toolchain por defecto. Configurando stable..."
+            rustup default stable || true
+        fi
+    fi
+
     cargo build --release --locked --manifest-path "$src_dir/Cargo.toml"
 
     run_root install -Dm755 "$src_dir/target/release/$APP_NAME" "/usr/local/bin/$APP_NAME"
