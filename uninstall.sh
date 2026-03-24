@@ -2,7 +2,7 @@
 set -eu
 
 APP_NAME="duck-keyboard"
-RAW_BASE="https://raw.githubusercontent.com/andexer/duck-keyboard/main"
+RAW_BASE="https://raw.githubusercontent.com/andexer/duck-keyboard/master"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 

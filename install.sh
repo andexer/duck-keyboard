@@ -3,9 +3,9 @@ set -eu
 
 APP_NAME="duck-keyboard"
 REPO_URL="https://github.com/andexer/duck-keyboard"
-RAW_BASE="https://raw.githubusercontent.com/andexer/duck-keyboard/main"
+RAW_BASE="https://raw.githubusercontent.com/andexer/duck-keyboard/master"
 RELEASE_BASE="$REPO_URL/releases/latest/download"
-SOURCE_TARBALL="$REPO_URL/archive/refs/heads/main.tar.gz"
+SOURCE_TARBALL="$REPO_URL/archive/refs/heads/master.tar.gz"
 
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT INT TERM

@@ -13,12 +13,12 @@ Una aplicacion de broma que reproduce sonidos de pato de manera aleatoria sin re
 ## Instalacion rapida
 Instalacion automatica desde el repositorio:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/andexer/duck-keyboard/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/andexer/duck-keyboard/master/install.sh | sh
 ```
 
 Desinstalacion automatica:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/andexer/duck-keyboard/main/uninstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/andexer/duck-keyboard/master/uninstall.sh | sh
 ```
 
 El instalador detecta tu distro, intenta usar el paquete nativo (`.deb`, `.rpm` o `.pkg.tar.zst`)
