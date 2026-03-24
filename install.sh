@@ -21,6 +21,23 @@ run_root() {
     fi
 }
 
+find_local_repo_root() {
+    if [ -f "./Cargo.toml" ] && [ -d "./packaging" ]; then
+        pwd -P
+        return 0
+    fi
+
+    script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P || true)"
+    if [ -n "${script_dir:-}" ] && [ -f "$script_dir/Cargo.toml" ] && [ -d "$script_dir/packaging" ]; then
+        printf '%s\n' "$script_dir"
+        return 0
+    fi
+
+    return 1
+}
+
+LOCAL_REPO_ROOT="$(find_local_repo_root || true)"
+
 need_cmd() {
     if ! command -v "$1" >/dev/null 2>&1; then
         echo "Falta el comando requerido: $1" >&2
@@ -33,9 +50,27 @@ download_to() {
     curl -fsSL "$1" -o "$2"
 }
 
+download_to_quiet() {
+    need_cmd curl
+    curl -fsSL "$1" -o "$2" 2>/dev/null
+}
+
+find_local_release_file() {
+    if [ -n "$LOCAL_REPO_ROOT" ] && [ -f "$LOCAL_REPO_ROOT/releases/$1" ]; then
+        printf '%s\n' "$LOCAL_REPO_ROOT/releases/$1"
+        return 0
+    fi
+
+    return 1
+}
+
 install_deb() {
-    pkg="$TMPDIR/$APP_NAME-amd64.deb"
-    download_to "$RELEASE_BASE/$APP_NAME-amd64.deb" "$pkg"
+    pkg="$(find_local_release_file "$APP_NAME-amd64.deb" || true)"
+    if [ -z "$pkg" ]; then
+        pkg="$TMPDIR/$APP_NAME-amd64.deb"
+        download_to_quiet "$RELEASE_BASE/$APP_NAME-amd64.deb" "$pkg" || return 1
+    fi
+
     if command -v apt-get >/dev/null 2>&1; then
         run_root apt-get install -y "$pkg"
     else
@@ -44,8 +79,12 @@ install_deb() {
 }
 
 install_rpm() {
-    pkg="$TMPDIR/$APP_NAME-x86_64.rpm"
-    download_to "$RELEASE_BASE/$APP_NAME-x86_64.rpm" "$pkg"
+    pkg="$(find_local_release_file "$APP_NAME-x86_64.rpm" || true)"
+    if [ -z "$pkg" ]; then
+        pkg="$TMPDIR/$APP_NAME-x86_64.rpm"
+        download_to_quiet "$RELEASE_BASE/$APP_NAME-x86_64.rpm" "$pkg" || return 1
+    fi
+
     if command -v dnf >/dev/null 2>&1; then
         run_root dnf install -y "$pkg"
     else
@@ -54,8 +93,12 @@ install_rpm() {
 }
 
 install_arch_package() {
-    pkg="$TMPDIR/$APP_NAME-x86_64.pkg.tar.zst"
-    download_to "$RELEASE_BASE/$APP_NAME-x86_64.pkg.tar.zst" "$pkg"
+    pkg="$(find_local_release_file "$APP_NAME-x86_64.pkg.tar.zst" || true)"
+    if [ -z "$pkg" ]; then
+        pkg="$TMPDIR/$APP_NAME-x86_64.pkg.tar.zst"
+        download_to_quiet "$RELEASE_BASE/$APP_NAME-x86_64.pkg.tar.zst" "$pkg" || return 1
+    fi
+
     run_root pacman -U --noconfirm "$pkg"
 }
 
@@ -83,20 +126,31 @@ install_build_deps() {
 fallback_source_install() {
     src_tar="$TMPDIR/$APP_NAME-source.tar.gz"
     src_dir="$TMPDIR/src"
-    helper="$TMPDIR/system-setup.sh"
 
     echo "No encontré un paquete nativo listo. Haré instalación desde código fuente."
     install_build_deps
-    download_to "$SOURCE_TARBALL" "$src_tar"
-    mkdir -p "$src_dir"
-    tar -xzf "$src_tar" -C "$src_dir" --strip-components=1
+
+    if [ -n "$LOCAL_REPO_ROOT" ]; then
+        src_dir="$LOCAL_REPO_ROOT"
+    else
+        if ! download_to_quiet "$SOURCE_TARBALL" "$src_tar"; then
+            echo "No pude descargar el código fuente desde GitHub." >&2
+            echo "Publica los cambios o ejecuta este script dentro del repositorio local." >&2
+            exit 1
+        fi
+        mkdir -p "$src_dir"
+        tar -xzf "$src_tar" -C "$src_dir" --strip-components=1
+    fi
 
     need_cmd cargo
     cargo build --release --locked --manifest-path "$src_dir/Cargo.toml"
 
     run_root install -Dm755 "$src_dir/target/release/$APP_NAME" "/usr/local/bin/$APP_NAME"
-    download_to "$RAW_BASE/packaging/system-setup.sh" "$helper"
-    chmod +x "$helper"
+
+    helper="$src_dir/packaging/system-setup.sh"
+    if [ ! -x "$helper" ]; then
+        chmod +x "$helper"
+    fi
     run_root "$helper" post-install "/usr/local/bin/$APP_NAME" write-autostart
 }
 

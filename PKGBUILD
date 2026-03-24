@@ -1,6 +1,6 @@
 pkgname=duck-keyboard
-pkgver=0.1.0
-pkgrel=2
+pkgver=0.1.1
+pkgrel=1
 pkgdesc="A prank keyboard app that plays random duck sounds on every keystroke"
 arch=('x86_64')
 url="https://github.com/andexer/duck-keyboard"

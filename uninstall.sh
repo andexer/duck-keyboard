@@ -17,8 +17,46 @@ run_root() {
     fi
 }
 
-download_to() {
-    curl -fsSL "$1" -o "$2"
+find_local_repo_root() {
+    if [ -f "./Cargo.toml" ] && [ -d "./packaging" ]; then
+        pwd -P
+        return 0
+    fi
+
+    script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P || true)"
+    if [ -n "${script_dir:-}" ] && [ -f "$script_dir/Cargo.toml" ] && [ -d "$script_dir/packaging" ]; then
+        printf '%s\n' "$script_dir"
+        return 0
+    fi
+
+    return 1
+}
+
+LOCAL_REPO_ROOT="$(find_local_repo_root || true)"
+
+download_to_quiet() {
+    curl -fsSL "$1" -o "$2" 2>/dev/null
+}
+
+resolve_helper_path() {
+    if [ -x /usr/lib/duck-keyboard/system-setup.sh ]; then
+        printf '%s\n' /usr/lib/duck-keyboard/system-setup.sh
+        return 0
+    fi
+
+    if [ -n "$LOCAL_REPO_ROOT" ] && [ -f "$LOCAL_REPO_ROOT/packaging/system-setup.sh" ]; then
+        printf '%s\n' "$LOCAL_REPO_ROOT/packaging/system-setup.sh"
+        return 0
+    fi
+
+    helper="$TMPDIR/system-setup.sh"
+    if download_to_quiet "$RAW_BASE/packaging/system-setup.sh" "$helper"; then
+        chmod +x "$helper"
+        printf '%s\n' "$helper"
+        return 0
+    fi
+
+    return 1
 }
 
 remove_deb() {
@@ -54,11 +92,13 @@ remove_arch() {
 }
 
 remove_local_install() {
-    helper="$TMPDIR/system-setup.sh"
-    download_to "$RAW_BASE/packaging/system-setup.sh" "$helper"
-    chmod +x "$helper"
-
     if [ -x "/usr/local/bin/$APP_NAME" ]; then
+        helper="$(resolve_helper_path || true)"
+        if [ -z "$helper" ]; then
+            echo "No pude encontrar system-setup.sh para limpiar la instalación local." >&2
+            exit 1
+        fi
+
         run_root "$helper" pre-remove "/usr/local/bin/$APP_NAME" write-autostart
         run_root rm -f "/usr/local/bin/$APP_NAME"
         echo "$APP_NAME fue removido de /usr/local/bin."
