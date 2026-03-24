@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Exec=/usr/bin/duck-keyboard daemon
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Duck Keyboard
+Comment=Reproduce sonidos de pato al presionar cualquier tecla

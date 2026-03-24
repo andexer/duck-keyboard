@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "Duck Keyboard Prank Application"
 license = "MIT"
+homepage = "https://github.com/andexer/duck-keyboard"
+repository = "https://github.com/andexer/duck-keyboard"
 
 [dependencies]
 anyhow = "1.0.102"
@@ -17,14 +19,21 @@ clap = { version = "4.5", features = ["derive"] }
 maintainer = "andexer"
 copyright = "2026, andexer"
 extended-description = "Una aplicacion de broma que reproduce sonidos de pato al presionar cualquier tecla."
+depends = "$auto, libc6, libgcc-s1, libasound2, libx11-6, libxtst6, libxi6"
+maintainer-scripts = "packaging/deb"
 assets = [
-    ["target/release/duck-keyboard", "usr/bin/", "755"]
+    ["target/release/duck-keyboard", "usr/bin/", "755"],
+    ["packaging/system-setup.sh", "usr/lib/duck-keyboard/system-setup.sh", "755"],
+    ["packaging/duck-keyboard.desktop", "etc/xdg/autostart/duck-keyboard.desktop", "644"],
+    ["README.md", "usr/share/doc/duck-keyboard/README.md", "644"]
 ]
 
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/duck-keyboard", dest = "/usr/bin/duck-keyboard", mode = "755" }
+    { source = "target/release/duck-keyboard", dest = "/usr/bin/duck-keyboard", mode = "755" },
+    { source = "packaging/system-setup.sh", dest = "/usr/lib/duck-keyboard/system-setup.sh", mode = "755" },
+    { source = "packaging/duck-keyboard.desktop", dest = "/etc/xdg/autostart/duck-keyboard.desktop", mode = "644", config = "noreplace" },
+    { source = "README.md", dest = "/usr/share/doc/duck-keyboard/README.md", mode = "644", doc = true }
 ]
 pre_uninstall_script = "rpm_preun.sh"
 post_install_script = "rpm_postinst.sh"
-

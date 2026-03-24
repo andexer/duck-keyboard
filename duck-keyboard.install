@@ -1,0 +1,15 @@
+post_install() {
+  if [ -x /usr/lib/duck-keyboard/system-setup.sh ]; then
+    /usr/lib/duck-keyboard/system-setup.sh post-install /usr/bin/duck-keyboard || true
+  fi
+}
+
+post_upgrade() {
+  post_install "$@"
+}
+
+pre_remove() {
+  if [ -x /usr/lib/duck-keyboard/system-setup.sh ]; then
+    /usr/lib/duck-keyboard/system-setup.sh pre-remove /usr/bin/duck-keyboard || true
+  fi
+}

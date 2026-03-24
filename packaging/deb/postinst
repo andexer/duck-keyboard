@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        if [ -x /usr/lib/duck-keyboard/system-setup.sh ]; then
+            /usr/lib/duck-keyboard/system-setup.sh post-install /usr/bin/duck-keyboard || true
+        fi
+        ;;
+esac
+
+exit 0

@@ -1,13 +1,11 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow, ensure};
 use clap::{Parser, Subcommand};
 use rand::Rng;
-use rdev::{listen, EventType};
+use rdev::{EventType, listen};
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use rust_embed::RustEmbed;
+use std::cell::RefCell;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::thread;
 use std::process::Command;
 
 #[derive(RustEmbed)]
@@ -21,18 +19,14 @@ struct PreloadedSound {
     samples: Vec<i16>,
 }
 
-/// Estado compartido entre hilos. Solo contiene datos inmutables (buffers)
-/// y un contador atomico, asi que no necesita Mutex para la reproduccion.
+/// El stream vive en el mismo hilo que `listen`, asi evitamos `unsafe`
+/// y tambien evitamos crear un hilo efimero por cada tecla.
 struct AppState {
+    _stream: OutputStream,
     stream_handle: OutputStreamHandle,
-    last_played: AtomicUsize,
+    last_played: Option<usize>,
     sounds: Vec<PreloadedSound>,
 }
-
-// El estado es seguro entre hilos porque OutputStreamHandle es Send+Sync,
-// los buffers son inmutables, y last_played es atomico.
-unsafe impl Sync for AppState {}
-unsafe impl Send for AppState {}
 
 #[derive(Parser)]
 #[command(version, about = "Duck Keyboard Prank", long_about = None)]
@@ -49,10 +43,8 @@ enum Commands {
     Daemon,
 }
 
-fn init_audio() -> Result<Arc<AppState>> {
+fn init_audio() -> Result<AppState> {
     let (stream, stream_handle) = OutputStream::try_default()?;
-    // Mantener el stream vivo para siempre
-    Box::leak(Box::new(stream));
 
     let mut sounds = Vec::new();
     for i in 1..=4 {
@@ -63,50 +55,63 @@ fn init_audio() -> Result<Arc<AppState>> {
                 let channels = source.channels();
                 let sample_rate = source.sample_rate();
                 let samples: Vec<i16> = source.into_iter().collect();
-                sounds.push(PreloadedSound { channels, sample_rate, samples });
+                sounds.push(PreloadedSound {
+                    channels,
+                    sample_rate,
+                    samples,
+                });
             }
         }
     }
 
-    let state = Arc::new(AppState {
+    ensure!(
+        !sounds.is_empty(),
+        "No se encontraron sonidos de pato embebidos en el binario."
+    );
+
+    Ok(AppState {
+        _stream: stream,
         stream_handle,
-        last_played: AtomicUsize::new(99),
+        last_played: None,
         sounds,
-    });
-    Ok(state)
+    })
 }
 
-/// Reproduce un pato aleatorio (no repite el ultimo) de forma instantanea.
-/// Cada llamada crea un Sink independiente que se ejecuta en paralelo,
-/// permitiendo que multiples sonidos suenen simultaneamente.
-fn play_random_duck(state: &AppState) {
-    if state.sounds.is_empty() {
-        return;
+fn choose_next_sound_index(sound_count: usize, last_played: Option<usize>) -> Option<usize> {
+    if sound_count == 0 {
+        return None;
+    }
+
+    if sound_count == 1 {
+        return Some(0);
     }
 
     let mut rng = rand::thread_rng();
-    let last = state.last_played.load(Ordering::Relaxed);
-    let mut next;
-    loop {
-        next = rng.gen_range(1..=4usize);
-        if next != last {
-            break;
-        }
-    }
-    state.last_played.store(next, Ordering::Relaxed);
+    let mut next = rng.gen_range(0..sound_count);
 
-    let idx = next - 1;
-    if idx < state.sounds.len() {
-        let sound = &state.sounds[idx];
-        let buffer = rodio::buffer::SamplesBuffer::new(
-            sound.channels,
-            sound.sample_rate,
-            sound.samples.clone(),
-        );
-        if let Ok(sink) = Sink::try_new(&state.stream_handle) {
-            sink.append(buffer);
-            sink.detach();
-        }
+    if Some(next) == last_played {
+        next = (next + 1 + rng.gen_range(0..(sound_count - 1))) % sound_count;
+    }
+
+    Some(next)
+}
+
+/// Reproduce un pato aleatorio sin repetir el ultimo si hay varias opciones.
+/// Cada evento crea su propio `Sink`, pero sin lanzar hilos nuevos.
+fn play_random_duck(state: &mut AppState) {
+    let Some(idx) = choose_next_sound_index(state.sounds.len(), state.last_played) else {
+        return;
+    };
+
+    state.last_played = Some(idx);
+
+    let sound = &state.sounds[idx];
+    let buffer =
+        rodio::buffer::SamplesBuffer::new(sound.channels, sound.sample_rate, sound.samples.clone());
+
+    if let Ok(sink) = Sink::try_new(&state.stream_handle) {
+        sink.append(buffer);
+        sink.detach();
     }
 }
 
@@ -151,7 +156,10 @@ fn install() -> Result<()> {
     std::fs::write(&desktop_file, desktop_content)?;
 
     // Matar instancias previas antes de lanzar una nueva
-    let _ = Command::new("pkill").arg("-f").arg("duck-keyboard daemon").status();
+    let _ = Command::new("pkill")
+        .arg("-f")
+        .arg("duck-keyboard daemon")
+        .status();
     Command::new(current_exe).arg("daemon").spawn()?;
 
     println!("Instalado. El pato esta corriendo en background.");
@@ -170,7 +178,10 @@ fn uninstall() -> Result<()> {
     }
 
     // Matar TODOS los procesos de duck-keyboard daemon
-    let _ = Command::new("pkill").arg("-f").arg("duck-keyboard daemon").status();
+    let _ = Command::new("pkill")
+        .arg("-f")
+        .arg("duck-keyboard daemon")
+        .status();
     // Segundo intento por si acaso
     let _ = Command::new("killall").arg("duck-keyboard").status();
 
@@ -179,28 +190,22 @@ fn uninstall() -> Result<()> {
 }
 
 fn run_daemon() -> Result<()> {
+    let state = RefCell::new(init_audio().map_err(|e| {
+        eprintln!("No se pudo inicializar el sistema de audio: {:?}", e);
+        e
+    })?);
 
-    let state = match init_audio() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("No se pudo inicializar el sistema de audio: {:?}", e);
-            return Err(e);
+    // El callback trabaja en el mismo hilo del listener. `Sink::detach()`
+    // deja el audio sonando en background, asi que no hace falta un hilo
+    // nuevo por cada pulsacion.
+    listen(move |event| {
+        if let EventType::KeyPress(_) = event.event_type
+            && let Ok(mut audio_state) = state.try_borrow_mut()
+        {
+            play_random_duck(&mut audio_state);
         }
-    };
-
-    // Cada tecla dispara un hilo efimero que reproduce el sonido.
-    // Esto garantiza que CADA tecla suene, sin importar la velocidad,
-    // porque los hilos corren en paralelo y no se esperan entre si.
-    if let Err(error) = listen(move |event| {
-        if let EventType::KeyPress(_) = event.event_type {
-            let state_ref = Arc::clone(&state);
-            thread::spawn(move || {
-                play_random_duck(&state_ref);
-            });
-        }
-    }) {
-        eprintln!("Error al escuchar teclado: {:?}", error);
-    }
+    })
+    .map_err(|error| anyhow!("Error al escuchar teclado: {:?}", error))?;
 
     Ok(())
 }
@@ -214,4 +219,29 @@ fn main() -> Result<()> {
         None => run_daemon()?,
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::choose_next_sound_index;
+
+    #[test]
+    fn choose_next_sound_index_returns_none_when_empty() {
+        assert_eq!(choose_next_sound_index(0, None), None);
+    }
+
+    #[test]
+    fn choose_next_sound_index_handles_single_sound() {
+        assert_eq!(choose_next_sound_index(1, None), Some(0));
+        assert_eq!(choose_next_sound_index(1, Some(0)), Some(0));
+    }
+
+    #[test]
+    fn choose_next_sound_index_avoids_immediate_repeats() {
+        for last in 0..4 {
+            let next = choose_next_sound_index(4, Some(last));
+            assert!(next.is_some());
+            assert_ne!(next, Some(last));
+        }
+    }
 }
